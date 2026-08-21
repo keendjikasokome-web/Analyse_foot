@@ -1,176 +1,142 @@
 import streamlit as st
 import requests
-import datetime
-# --- CONFIGURATION PAGE & STYLES FLASHSCORE ---
-st.set_page_config(page_title="Analyse Foot Pro", page_icon="⚽", layout="wide")
+# --- CONFIGURATION DE LA PAGE ---
+st.set_page_config(page_title="Flashscore Live", page_icon="⚽", layout="wide")
+# --- CLE API INTEGRÉE ---
+API_KEY = "2c29a09f780640819233da95eed7470d"
+API_URL = "https://api.football-data.org/v4/matches"
+headers = {"X-Auth-Token": API_KEY}
+# --- STYLES FLASHSCORE (INTERFACE VASTE ET COMPACTE) ---
 st.markdown("""
 <style>
-    /* Style Sombre style FlashScore */
-    .stApp {
-        background-color: #0d1117;
-        color: #e6edf3;
+    /* Réduire les marges globales pour un rendu vaste */
+    .block-container {
+        padding-top: 1.5rem !important;
+        padding-bottom: 1rem !important;
+        max-width: 95% !important;
     }
    
-    /* En-tête Championnat */
+    .stApp { background-color: #0d1117; color: #c9d1d9; }
+   
+    /* En-tête de ligue compact */
     .league-header {
         background-color: #161b22;
-        padding: 8px 12px;
-        border-radius: 6px;
-        border-left: 4px solid #e50914;
-        font-weight: bold;
-        font-size: 15px;
-        margin-top: 15px;
-        margin-bottom: 10px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-   
-    /* Carte Match */
-    .match-card {
-        background-color: #1c2128;
-        padding: 10px 15px;
-        border-radius: 6px;
-        margin-bottom: 8px;
-        border: 1px solid #30363d;
-    }
-   
-    /* Ligne Équipe */
-    .team-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 2px 0;
-        font-size: 14px;
-    }
-   
-    /* Minute en Direct */
-    .live-time {
-        color: #ff4b4b;
+        padding: 5px 10px;
+        border-radius: 4px;
+        border-left: 3px solid #ee2435;
         font-weight: bold;
         font-size: 13px;
-    }
-   
-    /* Score */
-    .score-num {
-        font-weight: bold;
-        font-size: 16px;
+        margin-top: 10px;
+        margin-bottom: 6px;
         color: #ffffff;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
    
-    .score-live {
-        color: #ff4b4b;
-        font-weight: bold;
-        font-size: 16px;
-    }
-    /* Séparateur */
-    hr {
-        border-color: #30363d;
+    /* Réduire la taille du texte dans l'accordéon */
+    .streamlit-expanderHeader {
+        font-size: 13px !important;
+        padding: 4px 8px !important;
     }
 </style>
 """, unsafe_allow_html=True)
-# --- FONCTION NETTOYAGE NOMS D'ÉQUIPES ---
-def clean_team_name(name):
+# --- FONCTION DE NETTOYAGE / RACCOURCISSEMENT DES NOMS ---
+def format_team_name(name):
+    if not name:
+        return ""
+    # Mots et suffixes courants à nettoyer/raccourcir
     replacements = {
-        " FC": "", "CF ": "", " Olympique": "", " Real": " Real",
-        "Olympique de Marseille": "Marseille", "Real Betis Balompié": "Betis",
-        "Real Sociedad de Fútbol": "Real Sociedad", "Coventry City": "Coventry",
-        "Arsenal FC": "Arsenal", " Paris Saint-Germain FC": "PSG"
+        " FC": "", "CF ": "", "FC ": "", " Olympique": "", " Real": "",
+        "Real Sociedad de Fútbol": "R. Sociedad",
+        "Real Betis Balompié": "Betis",
+        "Paris Saint-Germain FC": "PSG",
+        "Borussia Dortmund": "Dortmund",
+        "Atletico de Madrid": "Atlético",
+        "Club Atlético de Madrid": "Atlético",
+        "Manchester City FC": "Man City",
+        "Manchester United FC": "Man United",
+        "Tottenham Hotspur FC": "Tottenham",
+        "Wolverhampton Wanderers FC": "Wolves",
+        "Brighton & Hove Albion FC": "Brighton",
+        "Athletic Club": "Athletic Bilbao"
     }
-    cleaned = name
+    clean_name = name
     for key, val in replacements.items():
-        cleaned = cleaned.replace(key, val)
-    return cleaned.strip()
-# --- BARRE LATÉRALE : VIP & DÉVELOPPEUR ---
-st.sidebar.title("⚽ Analyse Foot Pro")
-st.sidebar.caption("🚀 Développé par **Kevin Kasokome**")
-st.sidebar.markdown("---")
-st.sidebar.subheader("🔒 Espace Membre VIP")
-vip_code = st.sidebar.text_input("Saisissez votre code VIP :", type="password")
-is_vip = False
-if vip_code == "FOOT2026":
-    is_vip = True
-    st.sidebar.success("✅ Accès VIP Débloqué !")
-elif vip_code:
-    st.sidebar.error("❌ Code incorrect")
-st.sidebar.markdown("---")
-st.sidebar.subheader("💳 Obtenir un accès VIP")
-st.sidebar.write("Pour recevoir votre code VIP, effectuez un paiement Mobile Money au :")
-st.sidebar.info("📱 **+243 XX XXX XXXX**\n*(M-Pesa / Airtel / Orange)*")
-# --- EN-TÊTE PRINCIPAL ---
-st.title("⚽ Matchs & Directs")
-# SÉLECTEUR DE DATE/ONGLETS
-col1, col2, col3 = st.columns(3)
-with col1:
-    tab_choice = st.radio("Affichage :", ["Tous les matchs", "🔴 EN DIRECT"], horizontal=True)
-st.markdown("---")
-# --- DONNÉES SIMULÉES / DÉMO FLASHSCORE ---
-# (Remplaçable par vos appels API)
-matches_data = [
-    {
-        "league": "ANGLETERRE : Premier League",
-        "home": "Arsenal FC", "away": "Coventry City",
-        "score_home": 2, "score_away": 0,
-        "status": "PAUSED", "minute": "Mi-temps"
-    },
-    {
-        "league": "ESPAGNE : LaLiga",
-        "home": "Real Betis Balompié", "away": "Real Sociedad de Fútbol",
-        "score_home": 1, "score_away": 0,
-        "status": "IN_PLAY", "minute": "65'"
-    },
-    {
-        "league": "FRANCE : Ligue 1",
-        "home": "Olympique de Marseille", "away": "RC Strasbourg Alsace",
-        "score_home": 1, "score_away": 0,
-        "status": "IN_PLAY", "minute": "42'"
-    }
-]
-# Rendre unique la liste des ligues
-leagues = list(set(m["league"] for m in matches_data))
-for league in leagues:
-    # Filtrer les matchs selon la compétition
-    league_matches = [m for m in matches_data if m["league"] == league]
-   
-    # Appliquer filtre DIRECT si sélectionné
-    if tab_choice == "🔴 EN DIRECT":
-        league_matches = [m for m in league_matches if m["status"] in ["IN_PLAY", "PAUSED"]]
-   
-    if not league_matches:
-        continue
-    # Affichage de l'en-tête de ligue
-    st.markdown(f'<div class="league-header">🏆 {league} <span>{len(league_matches)}</span></div>', unsafe_allow_html=True)
-   
-    for match in league_matches:
-        home = clean_team_name(match["home"])
-        away = clean_team_name(match["away"])
-        is_live = match["status"] == "IN_PLAY"
-        time_display = match["minute"] if is_live else ("MT" if match["status"] == "PAUSED" else "FT")
-       
-        score_class = "score-live" if is_live else "score-num"
-        time_class = "live-time" if is_live else ""
-        # Carte de chaque match style FlashScore
-        st.markdown(f"""
-        <div class="match-card">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                <span class="{time_class}">{time_display}</span>
-            </div>
-            <div class="team-row">
-                <span>⚪ <b>{home}</b></span>
-                <span class="{score_class}">{match["score_home"]}</span>
-            </div>
-            <div class="team-row">
-                <span>⚪ <b>{away}</b></span>
-                <span class="{score_class}">{match["score_away"]}</span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-# --- MODULE VIP ---
-if is_vip:
-    st.markdown("---")
-    st.subheader("⭐ Pronostics VIP & Algorithme")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.metric("Victoire Marseille", "68%", "+5% ce mois")
-    with col_b:
-        st.metric("Plus de 1.5 buts (Betis vs Real Sociedad)", "85%", "+2%")
+        clean_name = clean_name.replace(key, val)
+    return clean_name.strip()
+# --- FONCTION POUR CHARGER LES MATCHS ---
+@st.cache_data(ttl=60)
+def fetch_matches():
+    try:
+        response = requests.get(API_URL, headers=headers)
+        if response.status_code == 200:
+            return response.json().get("matches", []), None
+        elif response.status_code == 429:
+            return None, "Limite de requêtes atteinte. Réessaie dans une minute."
+        else:
+            return None, f"Erreur API ({response.status_code})."
+    except Exception as e:
+        return None, f"Erreur : {str(e)}"
+# --- INTERFACE PRINCIPALE ---
+st.title("⚽ Flashscore")
+# Bouton d'actualisation rapide
+col_space, col_btn = st.columns([5, 1])
+with col_btn:
+    if st.button("🔄 Actualiser"):
+        st.cache_data.clear()
+tab_matchs, tab_standings, tab_news = st.tabs(["📊 Matchs & Scores", "🏆 Classements", "📰 Actualités"])
+with tab_matchs:
+    matches, error = fetch_matches()
+    if error:
+        st.error(error)
+    elif not matches:
+        st.warning("Aucun match au programme aujourd'hui.")
+    else:
+        leagues = {}
+        for m in matches:
+            l_name = m.get("competition", {}).get("name", "Autres")
+            leagues.setdefault(l_name, []).append(m)
+        for l_name, l_matches in leagues.items():
+            st.markdown(f'<div class="league-header">🏆 {l_name}</div>', unsafe_allow_html=True)
+            for m in l_matches:
+                # Récupération et raccourcissement des noms
+                raw_h = m["homeTeam"].get("shortName") or m["homeTeam"].get("name")
+                raw_a = m["awayTeam"].get("shortName") or m["awayTeam"].get("name")
+                h = format_team_name(raw_h)
+                a = format_team_name(raw_a)
+               
+                # Scores
+                sh = m["score"]["fullTime"]["home"]
+                sa = m["score"]["fullTime"]["away"]
+                sh_str = str(sh) if sh is not None else "0"
+                sa_str = str(sa) if sa is not None else "0"
+               
+                # Statut compact
+                status = m.get("status")
+                if status == "IN_PLAY":
+                    label = "🔴 LIVE"
+                elif status == "PAUSED":
+                    label = "⏸️ MT"
+                elif status == "FINISHED":
+                    label = "FT"
+                else:
+                    label = m.get("utcDate", "")[11:16]
+                # Titre de ligne compact (façon Flashscore)
+                match_title = f"{label} | {h} {sh_str} - {sa_str} {a}"
+               
+                with st.expander(match_title):
+                    st.write(f"**{h} {sh_str} - {sa_str} {a}**")
+                    goals = m.get("goals", [])
+                    if goals:
+                        st.markdown("**⚽ Buteurs :**")
+                        for g in goals:
+                            scorer = g.get('scorer', {}).get('name', 'Buteur')
+                            team = format_team_name(g.get('team', {}).get('name', ''))
+                            minute = g.get('minute', '')
+                            st.write(f"• {minute}' {scorer} ({team})")
+                    else:
+                        st.caption("Aucun buteur renseigné pour le moment.")
+with tab_standings:
+    st.info("Classements en cours de déploiement.")
+with tab_news:
+    st.info("Actualités en cours de déploiement.")
